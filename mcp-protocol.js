@@ -32,11 +32,16 @@ class MCPProtocolHandler {
       jsonrpc: '2.0',
       method: 'initialize',
       params: {
+        protocolVersion: '2.0',
         capabilities: {
           notification: true,
           multiChannel: true,
           tools: true,
           prompts: true
+        },
+        serverInfo: {
+          name: 'kai-notify',
+          version: '1.0.0'
         }
       },
       id: 'init'

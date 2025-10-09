@@ -27,25 +27,8 @@ class MCPProtocolHandler {
       }
     });
     
-    // Send initialization response to indicate readiness
-    this.sendResponse({
-      jsonrpc: '2.0',
-      method: 'initialize',
-      params: {
-        protocolVersion: '2.0',
-        capabilities: {
-          notification: true,
-          multiChannel: true,
-          tools: true,
-          prompts: true
-        },
-        serverInfo: {
-          name: 'kai-notify',
-          version: '1.0.0'
-        }
-      },
-      id: 'init'
-    });
+    // Log that the server is ready to receive initialize request
+    logger.info('MCP Server initialized and ready to receive requests');
   }
 
   // Handle incoming stdio messages
@@ -89,7 +72,19 @@ class MCPProtocolHandler {
           result = this.handleConfigRequest(params);
           break;
         case 'initialize':
-          result = { initialized: true };
+          result = {
+            protocolVersion: '2.0',
+            capabilities: {
+              notification: true,
+              multiChannel: true,
+              tools: true,
+              prompts: true
+            },
+            serverInfo: {
+              name: 'kai-notify',
+              version: '1.0.0'
+            }
+          };
           break;
         case 'tools/list':
           result = this.handleToolsListRequest(params);

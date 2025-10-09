@@ -27,6 +27,7 @@ Notification Hub (kai-notify) is a local MCP (Managed Compute Platform) server t
 3. **Channel Adapters**: Individual modules for each notification channel (Slack, LINE)
 4. **Configuration Manager**: Handles configuration for all channels
 5. **Error Handler and Logger**: Manages errors and logs activities
+6. **MCP Tools and Prompts Handler**: Provides MCP-standard tools and prompts discovery and execution
 
 ### Data Flow
 1. AI service sends notification request via stdio to the Notification Hub
@@ -41,8 +42,8 @@ Notification Hub (kai-notify) is a local MCP (Managed Compute Platform) server t
 ### Stdio Communication
 The Notification Hub communicates via stdin/stdout using JSON-RPC 2.0 protocol for MCP compliance. The server can operate in two modes:
 
-1. **MCP Server Mode**: Automatically activated when stdin is piped to it (e.g., when launched by an MCP environment)
-2. **CLI Mode**: Activated with `--cli` flag for manual testing and interaction
+1. **MCP Server Mode**: Explicitly activated with `--mcp` flag for persistent stdio communication
+2. **CLI Mode**: Activated with `--cli` flag for manual testing and single requests
 
 ### MCP Requests via Stdio
 - **Protocol**: JSON-RPC 2.0 over stdin/stdout
@@ -87,10 +88,20 @@ The Notification Hub communicates via stdin/stdout using JSON-RPC 2.0 protocol f
   }
   ```
 
+### MCP Tools and Prompts Support
+The system now supports MCP-standard tools and prompts:
+- **Tools**:
+  - `tools/list`: Discover available tools
+  - `tools/call`: Execute specific tools (e.g., send_notification)
+- **Prompts**:
+  - `prompts/list`: Discover available prompt templates
+  - `prompts/get`: Retrieve specific prompt details
+
 ### CLI Mode Commands
 - **Health Check**: `npx kai-notify --cli health`
 - **Notification**: `npx kai-notify --cli notify --message "Your message" --channel slack`
-- **MCP Server Mode**: `echo '{"jsonrpc":"2.0","method":"notify","params":{"message":"Test"},"id":1}' | npx kai-notify`
+- **MCP Server Mode**: `npx kai-notify --mcp` (persistent communication)
+- **MCP Request**: `echo '{"jsonrpc":"2.0","method":"notify","params":{"message":"Test"},"id":1}' | npx kai-notify --mcp`
 
 ### Configuration Priority
 The system looks for configuration in this order:
@@ -153,6 +164,8 @@ All configuration files use the same format:
 - **Global Availability**: Accessible from any directory without local installation
 - **Version Management**: npx automatically handles version updates
 - **Isolated Execution**: No global dependencies to manage
+- **MCP Server Mode**: Run with `npx kai-notify --mcp` for persistent communication
+- **CLI Mode**: Run with `npx kai-notify --cli` for single requests
 
 ## Benefits of Stdio Protocol
 - **No Network Ports Required**: The server operates without occupying network ports, allowing multiple instances to run simultaneously

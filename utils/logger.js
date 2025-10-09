@@ -24,8 +24,9 @@ class Logger {
     // Write to log file
     fs.appendFileSync(this.logFile, JSON.stringify(logEntry) + '\n');
 
-    // Output to console
-    console.log(`${timestamp} [${level}] ${message}`, meta);
+    // Output to console using stderr for MCP compliance
+    // Only protocol messages should go through stdout
+    console.error(`${timestamp} [${level}] ${message}`, meta);
   }
 
   info(message, meta = {}) {

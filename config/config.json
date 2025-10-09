@@ -1,0 +1,20 @@
+{
+  "server": {
+    "port": 3000,
+    "host": "localhost"
+  },
+  "channels": {
+    "slack": {
+      "enabled": false,
+      "botToken": "",
+      "webhookUrl": "",
+      "defaultChannel": "#general"
+    },
+    "line": {
+      "enabled": false,
+      "channelAccessToken": "",
+      "channelSecret": "",
+      "defaultUserId": ""
+    }
+  }
+}

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const MCPProtocolHandler = require('./mcp-protocol');
-const configManager = require('./config/config-manager');
-const logger = require('./utils/logger');
+import { MCPServer } from './mcp-protocol.js';
+import configManager from './config/config-manager.js';
+import logger from './utils/logger.js';
 
 // Check if we should run in MCP Server mode (using explicit --mcp flag)
 const args = process.argv.slice(2);
@@ -87,19 +87,19 @@ async function runCLIMode() {
           channels: options.channel ? [options.channel] : []
         };
 
-        const handler = new MCPProtocolHandler();
-        const result = await handler.handleNotifyRequest(params);
+        const mcpServerInstance = new MCPServer();
+        const result = await mcpServerInstance.handleNotifyRequest(params);
         console.log(JSON.stringify(result, null, 2));
         break;
 
       case 'health':
-        const healthHandler = new MCPProtocolHandler();
+        const healthHandler = new MCPServer();
         const healthResult = healthHandler.handleHealthRequest();
         console.log(JSON.stringify(healthResult, null, 2));
         break;
 
       case 'config':
-        const configHandler = new MCPProtocolHandler();
+        const configHandler = new MCPServer();
         const configResult = configHandler.handleConfigRequest();
         console.log(JSON.stringify(configResult, null, 2));
         break;
@@ -119,8 +119,11 @@ async function runCLIMode() {
 if (isMCPMode) {
   // MCP Server Mode
   logger.info('Starting MCP Server mode');
-  const mcpHandler = new MCPProtocolHandler();
-  mcpHandler.initialize();
+  const mcpServerInstance = new MCPServer();
+  mcpServerInstance.initialize().catch(error => {
+    logger.error('Failed to initialize MCP server:', error);
+    process.exit(1);
+  });
 } else if (isCLIExplicit) {
   // CLI Mode
   logger.info('Starting CLI mode');

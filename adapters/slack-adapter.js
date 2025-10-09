@@ -1,5 +1,6 @@
-const { WebClient } = require('@slack/web-api');
-const configManager = require('../config/config-manager');
+import { WebClient } from '@slack/web-api';
+import configManager from '../config/config-manager.js';
+import axios from 'axios';
 
 class SlackAdapter {
   constructor() {
@@ -17,41 +18,43 @@ class SlackAdapter {
     }
   }
 
-  async sendMessage(message, title = '') {
-    if (!this.enabled) {
-      throw new Error('Slack adapter is not enabled');
-    }
-
+  async sendNotification(webhookUrl, message, title = '') {
     try {
-      if (this.botToken) {
-        // Use bot token to post message
-        const response = await this.client.chat.postMessage({
-          channel: this.defaultChannel,
-          text: title ? `${title}\n${message}` : message,
-          mrkdwn: true
-        });
-
-        if (!response.ok) {
-          throw new Error(`Slack API error: ${response.error}`);
-        }
-      } else if (this.webhookUrl) {
-        // Use webhook to post message
-        const axios = require('axios');
-        
+      if (webhookUrl) {
+        // Use the provided webhook URL to post message
         const payload = {
-          text: title ? `${title}\n${message}` : message,
-          channel: this.defaultChannel
+          text: title ? `${title}\n${message}` : message
         };
 
-        await axios.post(this.webhookUrl, payload);
+        const response = await axios.post(webhookUrl, payload);
+        return {
+          success: true,
+          data: response.data,
+          message: 'Slack notification sent successfully'
+        };
       } else {
-        throw new Error('No valid authentication method configured for Slack');
+        // Fallback to config webhook if not provided
+        const config = configManager.get();
+        if (config.channels.slack.webhookUrl) {
+          const payload = {
+            text: title ? `${title}\n${message}` : message
+          };
+
+          const response = await axios.post(config.channels.slack.webhookUrl, payload);
+          return {
+            success: true,
+            data: response.data,
+            message: 'Slack notification sent successfully'
+          };
+        } else {
+          throw new Error('No valid webhook URL provided for Slack');
+        }
       }
     } catch (error) {
-      console.error('Error sending Slack message:', error);
+      console.error('Error sending Slack notification:', error);
       throw error;
     }
   }
 }
 
-module.exports = SlackAdapter;
+export default SlackAdapter;

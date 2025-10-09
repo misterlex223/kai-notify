@@ -1,10 +1,36 @@
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path, { dirname } from 'path';
+import os from 'os';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 class ConfigManager {
   constructor() {
     this.config = this.loadConfig();
+    // Store the path of the config that was loaded to save to the same location
+    this.configPath = this.determineConfigPath();
+  }
+
+  determineConfigPath() {
+    // Determine which config file was loaded based on priority order
+    const workingDirConfig = path.join(process.cwd(), '.kai-notify.json');
+    const userHomeConfig = path.join(os.homedir(), '.kai', 'notify.json');
+    const defaultConfig = path.join(__dirname, 'config.json');
+
+    // Try working directory config first
+    if (fs.existsSync(workingDirConfig)) {
+      return workingDirConfig;
+    }
+
+    // Try user home config next
+    if (fs.existsSync(userHomeConfig)) {
+      return userHomeConfig;
+    }
+
+    // Fallback to default config
+    return defaultConfig;
   }
 
   loadConfig() {
@@ -74,7 +100,7 @@ class ConfigManager {
       // Update the in-memory config
       this.config = { ...this.config, ...newConfig };
 
-      // Write to file
+      // Write to the config file that was originally loaded
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
 
       return { success: true, message: 'Configuration updated successfully' };
@@ -85,13 +111,8 @@ class ConfigManager {
 
   validateConfig(config) {
     // Basic validation for required structure
-    if (!config.server || !config.channels) {
-      throw new Error('Invalid configuration structure');
-    }
-
-    // Validate server config
-    if (typeof config.server.port !== 'number' || config.server.port <= 0) {
-      throw new Error('Server port must be a positive number');
+    if (!config.channels) {
+      throw new Error('Invalid configuration structure: missing channels');
     }
 
     // Validate channel configs
@@ -141,4 +162,4 @@ class ConfigManager {
   }
 }
 
-module.exports = new ConfigManager();
+export default new ConfigManager();

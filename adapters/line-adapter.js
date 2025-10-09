@@ -1,5 +1,5 @@
-const line = require('@line/bot-sdk');
-const configManager = require('../config/config-manager');
+import line from '@line/bot-sdk';
+import configManager from '../config/config-manager.js';
 
 class LineAdapter {
   constructor() {
@@ -18,28 +18,29 @@ class LineAdapter {
     }
   }
 
-  async sendMessage(message, title = '') {
-    if (!this.enabled) {
-      throw new Error('LINE adapter is not enabled');
-    }
-
+  async sendNotification(channelAccessToken, userId, message) {
     try {
-      // Format the message
-      const fullMessage = title ? `${title}\n${message}` : message;
+      // Use the provided access token and user ID
+      const client = new line.Client({
+        channelAccessToken: channelAccessToken
+      });
       
-      // Create the message object for LINE
-      const lineMessage = {
+      // Send to the specified user ID
+      const response = await client.pushMessage(userId, {
         type: 'text',
-        text: fullMessage.substring(0, 5000) // LINE has text limits
+        text: message.substring(0, 5000) // LINE has text limits
+      });
+      
+      return {
+        success: true,
+        data: response,
+        message: 'LINE notification sent successfully'
       };
-
-      // Send to the default user ID specified in config
-      await this.client.pushMessage(this.defaultUserId, lineMessage);
     } catch (error) {
-      console.error('Error sending LINE message:', error);
+      console.error('Error sending LINE notification:', error);
       throw error;
     }
   }
 }
 
-module.exports = LineAdapter;
+export default LineAdapter;

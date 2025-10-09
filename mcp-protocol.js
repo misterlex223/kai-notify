@@ -1,378 +1,282 @@
-const readline = require('readline');
-const { spawn } = require('child_process');
-const SlackAdapter = require('./adapters/slack-adapter');
-const LineAdapter = require('./adapters/line-adapter');
-const logger = require('./utils/logger');
-const configManager = require('./config/config-manager');
+import readline from 'readline';
+import { spawn } from 'child_process';
+import logger from './utils/logger.js';
+import configManager from './config/config-manager.js';
+import SlackAdapter from './adapters/slack-adapter.js';
+import LineAdapter from './adapters/line-adapter.js';
+import { z } from 'zod';
 
-class MCPProtocolHandler {
+// Import MCP SDK components using the wildcard path from package exports
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport as StdioTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
+
+export class MCPServer {
   constructor() {
     this.slackAdapter = new SlackAdapter();
     this.lineAdapter = new LineAdapter();
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: false
-    });
+    this.config = configManager.get();
     
-    this.requestId = 0;
-    this.pendingRequests = new Map();
-  }
-
-  // Initialize the MCP server
-  initialize() {
-    this.rl.on('line', (input) => {
-      if (input.trim()) {
-        this.handleInput(input.trim());
+    // Create the MCP server with proper server info
+    this.mcpServer = new McpServer({
+      name: 'kai-notify',
+      version: '1.0.0',
+      websiteUrl: 'https://github.com/kai-notify',
+      description: 'A multi-channel notification hub for AI task completion alerts'
+    }, {
+      capabilities: {
+        tools: {},
+        prompts: {}
       }
     });
-    
-    // Log that the server is ready to receive initialize request
-    logger.info('MCP Server initialized and ready to receive requests');
   }
 
-  // Handle incoming stdio messages
-  handleInput(input) {
+  // Initialize the MCP server using the official SDK
+  async initialize() {
     try {
-      const message = JSON.parse(input);
-      
-      if (message.jsonrpc !== '2.0') {
-        this.sendError('Invalid JSON-RPC version', -32603);
-        return;
-      }
-
-      if (message.method) {
-        this.handleRequest(message);
-      } else if (message.result || message.error) {
-        this.handleResponse(message);
-      }
-    } catch (error) {
-      logger.error('Error parsing stdio input', { error: error.message, input });
-      this.sendError('Invalid JSON input', -32700);
-    }
-  }
-
-  // Handle incoming requests
-  async handleRequest(request) {
-    const { method, params, id } = request;
-
-    logger.info(`Received request: ${method}`, { id, params });
-
-    try {
-      let result;
-
-      switch (method) {
-        case 'notify':
-          result = await this.handleNotifyRequest(params);
-          break;
-        case 'health':
-          result = this.handleHealthRequest(params);
-          break;
-        case 'config':
-          result = this.handleConfigRequest(params);
-          break;
-        case 'initialize':
-          result = {
-            protocolVersion: '2.0',
-            capabilities: {
-              notification: true,
-              multiChannel: true,
-              tools: true,
-              prompts: true
-            },
-            serverInfo: {
-              name: 'kai-notify',
-              version: '1.0.0'
-            }
+      // Register our notification tool
+      this.mcpServer.registerTool('sendNotification', {
+        title: 'Send Notification', // Display name for UI
+        description: 'Send a notification to configured channels',
+        inputSchema: {
+          channel: z.string().describe('Channel to send notification to (slack, line, or multi)'),
+          message: z.string().describe('Message content to send'),
+          title: z.string().optional().describe('Optional title for the notification')
+        }
+      }, async ({ channel, message, title = '' }) => {
+        try {
+          let result;
+          
+          switch (channel) {
+            case 'slack':
+              if (!this.config.channels.slack.webhookUrl) {
+                return {
+                  content: [{ type: 'text', text: 'Error: Slack webhook URL not configured' }]
+                };
+              }
+              result = await this.slackAdapter.sendNotification(
+                this.config.channels.slack.webhookUrl,
+                message,
+                title
+              );
+              break;
+            case 'line':
+              if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+                return {
+                  content: [{ type: 'text', text: 'Error: LINE channel access token or user ID not configured' }]
+                };
+              }
+              result = await this.lineAdapter.sendNotification(
+                this.config.channels.line.channelAccessToken,
+                this.config.channels.line.defaultUserId,
+                message
+              );
+              break;
+            case 'multi':
+              // Send to both channels
+              if (!this.config.channels.slack.webhookUrl) {
+                return {
+                  content: [{ type: 'text', text: 'Error: Slack webhook URL not configured' }]
+                };
+              }
+              const slackResult = await this.slackAdapter.sendNotification(
+                this.config.channels.slack.webhookUrl,
+                message,
+                title
+              );
+              
+              if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+                return {
+                  content: [{ type: 'text', text: 'Error: LINE channel access token or user ID not configured' }]
+                };
+              }
+              const lineResult = await this.lineAdapter.sendNotification(
+                this.config.channels.line.channelAccessToken,
+                this.config.channels.line.defaultUserId,
+                message
+              );
+              
+              result = {
+                slack: slackResult,
+                line: lineResult,
+                message: 'Notification sent to multiple channels'
+              };
+              break;
+            default:
+              throw new Error(`Unsupported channel: ${channel}`);
+          }
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Successfully sent notification: ${JSON.stringify(result)}`
+              }
+            ]
           };
-          break;
-        case 'tools/list':
-          result = this.handleToolsListRequest(params);
-          break;
-        case 'tools/call':
-          result = await this.handleToolsCallRequest(params);
-          break;
-        case 'prompts/list':
-          result = this.handlePromptsListRequest(params);
-          break;
-        case 'prompts/get':
-          result = this.handlePromptsGetRequest(params);
-          break;
-        default:
-          this.sendError(`Method ${method} not supported`, -32601, id);
-          return;
-      }
-
-      if (id !== undefined) { // Only respond if it's not a notification
-        this.sendResponse({
-          jsonrpc: '2.0',
-          result: result,
-          id: id
-        });
-      }
+        } catch (error) {
+          logger.error('Error sending notification', { error: error.message });
+          
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Error sending notification: ${error.message}`
+              }
+            ]
+          };
+        }
+      });
+      
+      // Register a prompt that guides the AI on using the sendNotification tool
+      this.mcpServer.registerPrompt('sendNotification', {
+        title: 'Send Notification Tool Guide',
+        description: 'Use this prompt when you need to send notifications to users via various channels. It provides guidance on how to use the sendNotification tool.',
+        argsSchema: {
+          task: z.string().describe('Description of the task or event that requires a notification')
+        }
+      }, async ({ task }) => {
+        // This prompt helps guide the AI on when and how to use the sendNotification tool
+        return {
+          messages: [
+            {
+              role: 'system',
+              content: {
+                type: 'text',
+                text: `You can send notifications to users using the sendNotification tool when important events occur, such as: task completion, status updates, errors, or other significant system events.`
+              }
+            },
+            {
+              role: 'user', 
+              content: {
+                type: 'text',
+                text: `When I need to notify users about: ${task}, I should use the sendNotification tool.`
+              }
+            },
+            {
+              role: 'assistant',
+              content: {
+                type: 'text',
+                text: `Use the sendNotification tool to send notifications about: ${task}. Choose the appropriate channel (slack, line, or multi) based on your configuration and user preferences.`
+              }
+            }
+          ]
+        };
+      });
+      
+      // Create transport for stdio communication
+      const transport = new StdioTransport(process.stdin, process.stdout);
+      
+      // Connect the server to the transport
+      await this.mcpServer.connect(transport);
+      
+      logger.info('MCP Server initialized and running with SDK');
+      
     } catch (error) {
-      logger.error('Error handling request', { method, error: error.message });
-      this.sendError(error.message, -32603, id);
+      logger.error('Error initializing MCP server with SDK', { error: error.message });
+      throw error;
     }
   }
-
-  // Handle responses to our requests
-  handleResponse(response) {
-    const { id, result, error } = response;
-    const requestResolver = this.pendingRequests.get(id);
-
-    if (requestResolver) {
-      if (error) {
-        requestResolver.reject(error);
-      } else {
-        requestResolver.resolve(result);
-      }
-      this.pendingRequests.delete(id);
-    }
-  }
-
-  // Handle notification requests
+  
+  // CLI compatibility methods
   async handleNotifyRequest(params) {
-    const { message, channels = [], title = '', priority = 'normal' } = params;
-
-    if (!message) {
-      throw new Error('Message is required');
-    }
-
-    const results = {
-      status: 'success',
-      channels_notified: [],
-      timestamp: new Date().toISOString(),
-      details: {}
-    };
-
-    // Determine which channels to send to (all if none specified)
-    const targetChannels = channels.length > 0 ? channels : ['slack', 'line'];
-    const config = configManager.get();
-
-    // Send notifications to enabled channels
-    if (targetChannels.includes('slack') && config.channels.slack.enabled) {
-      try {
-        await this.slackAdapter.sendMessage(message, title);
-        results.channels_notified.push('slack');
-        results.details.slack = { status: 'success' };
-        logger.info('Slack notification sent successfully');
-      } catch (error) {
-        logger.error('Error sending Slack notification', { error: error.message });
-        results.details.slack = { status: 'error', error: error.message };
+    try {
+      const { message, title, channels = ['multi'] } = params;
+      
+      let result = {};
+      
+      for (const channel of channels) {
+        switch (channel) {
+          case 'slack':
+            if (!this.config.channels.slack.webhookUrl) {
+              return {
+                success: false,
+                error: 'Slack webhook URL not configured'
+              };
+            }
+            result.slack = await this.slackAdapter.sendNotification(
+              this.config.channels.slack.webhookUrl,
+              message,
+              title
+            );
+            break;
+          case 'line':
+            if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+              return {
+                success: false,
+                error: 'LINE channel access token or user ID not configured'
+              };
+            }
+            result.line = await this.lineAdapter.sendNotification(
+              this.config.channels.line.channelAccessToken,
+              this.config.channels.line.defaultUserId,
+              message
+            );
+            break;
+          case 'multi':
+          default:
+            // Send to both channels
+            if (!this.config.channels.slack.webhookUrl) {
+              return {
+                success: false,
+                error: 'Slack webhook URL not configured'
+              };
+            }
+            result.slack = await this.slackAdapter.sendNotification(
+              this.config.channels.slack.webhookUrl,
+              message,
+              title
+            );
+            
+            if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+              return {
+                success: false,
+                error: 'LINE channel access token or user ID not configured'
+              };
+            }
+            result.line = await this.lineAdapter.sendNotification(
+              this.config.channels.line.channelAccessToken,
+              this.config.channels.line.defaultUserId,
+              message
+            );
+            result.message = 'Notification sent to multiple channels';
+            break;
+        }
       }
+      
+      return {
+        success: true,
+        result,
+        message: 'Notification sent successfully'
+      };
+    } catch (error) {
+      logger.error('Error in handleNotifyRequest:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
-
-    if (targetChannels.includes('line') && config.channels.line.enabled) {
-      try {
-        await this.lineAdapter.sendMessage(message, title);
-        results.channels_notified.push('line');
-        results.details.line = { status: 'success' };
-        logger.info('LINE notification sent successfully');
-      } catch (error) {
-        logger.error('Error sending LINE notification', { error: error.message });
-        results.details.line = { status: 'error', error: error.message };
-      }
-    }
-
-    logger.info('Notification processed', { results: results.channels_notified });
-    return results;
   }
-
-  // Handle health check requests
-  handleHealthRequest(params) {
-    const config = configManager.get();
-    logger.info('Health check requested');
+  
+  handleHealthRequest() {
     return {
+      success: true,
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      channels: {
-        slack: config.channels.slack.enabled,
-        line: config.channels.line.enabled
-      }
+      version: '1.0.0'
     };
   }
-
-  // Handle configuration requests
-  handleConfigRequest(params) {
-    const config = configManager.get();
-    // Don't send sensitive information in response
-    const publicConfig = {
-      server: config.server,
-      channels: {
-        slack: { enabled: config.channels.slack.enabled },
-        line: { enabled: config.channels.line.enabled }
+  
+  handleConfigRequest() {
+    // Return configuration info without sensitive data
+    const { slack, line } = this.config.channels;
+    return {
+      success: true,
+      config: {
+        hasSlackConfig: !!slack.webhookUrl,
+        hasLineConfig: !!(line.channelAccessToken && line.defaultUserId),
+        channels: ['slack', 'line', 'multi']
       }
     };
-    return publicConfig;
-  }
-
-  // Handle tools list request
-  handleToolsListRequest(params) {
-    logger.info('Tools list requested');
-    return [
-      {
-        name: "send_notification",
-        description: "Send a notification to configured channels (LINE, Slack)",
-        inputSchema: {
-          type: "object",
-          properties: {
-            message: { 
-              type: "string", 
-              description: "The message content to send" 
-            },
-            title: { 
-              type: "string", 
-              description: "The title for the notification" 
-            },
-            channels: { 
-              type: "array", 
-              items: { type: "string" },
-              description: "Array of channel names to send to (e.g., ['line', 'slack'])"
-            }
-          },
-          required: ["message"]
-        }
-      }
-    ];
-  }
-
-  // Handle tools call request
-  async handleToolsCallRequest(params) {
-    const { name, arguments: args } = params;
-    logger.info('Tools call requested', { name, args });
-
-    if (name === 'send_notification') {
-      return await this.handleNotifyRequest(args);
-    } else {
-      throw new Error(`Tool ${name} not found`);
-    }
-  }
-
-  // Handle prompts list request
-  handlePromptsListRequest(params) {
-    logger.info('Prompts list requested');
-    return [
-      {
-        name: "quick_notification",
-        title: "Quick Notification",
-        description: "Send a quick notification to one or more channels",
-        arguments: [
-          { 
-            name: "message", 
-            type: "string", 
-            required: true,
-            description: "The message to send"
-          },
-          { 
-            name: "title", 
-            type: "string", 
-            required: false,
-            description: "The title for the notification"
-          },
-          { 
-            name: "channel", 
-            type: "string", 
-            required: false,
-            description: "Specific channel to send to (line or slack)"
-          }
-        ]
-      },
-      {
-        name: "status_update",
-        title: "Status Update",
-        description: "Send a status update notification with predefined format",
-        arguments: [
-          { 
-            name: "status", 
-            type: "string", 
-            required: true,
-            description: "Current status (e.g., 'operational', 'degraded', 'down')"
-          },
-          { 
-            name: "details", 
-            type: "string", 
-            required: false,
-            description: "Additional details about the status"
-          }
-        ]
-      }
-    ];
-  }
-
-  // Handle prompts get request
-  handlePromptsGetRequest(params) {
-    const { name } = params;
-    logger.info('Prompts get requested', { name });
-
-    const prompts = this.handlePromptsListRequest();
-    const prompt = prompts.find(p => p.name === name);
-
-    if (prompt) {
-      // Add template content to the prompt
-      switch (name) {
-        case "quick_notification":
-          prompt.template = "Send the following message: {{message}}";
-          if (prompt.arguments.title) {
-            prompt.template = "Title: {{title}}\n\nMessage: {{message}}";
-          }
-          break;
-        case "status_update":
-          prompt.template = "Status Update: {{status}}\nDetails: {{details}}";
-          break;
-      }
-      return prompt;
-    } else {
-      throw new Error(`Prompt ${name} not found`);
-    }
-  }
-
-  // Send response via stdio
-  sendResponse(response) {
-    const output = JSON.stringify(response) + '\n';
-    process.stdout.write(output);
-  }
-
-  // Send error response
-  sendError(message, code, id) {
-    const errorResponse = {
-      jsonrpc: '2.0',
-      error: {
-        code: code,
-        message: message
-      },
-      id: id
-    };
-    this.sendResponse(errorResponse);
-  }
-
-  // Send a request and wait for response
-  sendRequest(method, params) {
-    return new Promise((resolve, reject) => {
-      const id = ++this.requestId;
-      const request = {
-        jsonrpc: '2.0',
-        method: method,
-        params: params,
-        id: id
-      };
-
-      // Store the resolver to handle the response later
-      this.pendingRequests.set(id, { resolve, reject });
-
-      // Send the request
-      const output = JSON.stringify(request) + '\n';
-      process.stdout.write(output);
-
-      // Clean up after timeout if no response
-      setTimeout(() => {
-        if (this.pendingRequests.has(id)) {
-          this.pendingRequests.delete(id);
-          reject(new Error('Request timeout'));
-        }
-      }, 10000); // 10 second timeout
-    });
   }
 }
-
-module.exports = MCPProtocolHandler;

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "A multi-channel notification hub for AI task completion alerts",
   "main": "index.js",
+  "type": "module",
   "bin": {
     "kai-notify": "index.js"
   },
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@line/bot-sdk": "^7.5.2",
+    "@modelcontextprotocol/sdk": "^1.19.1",
     "@slack/web-api": "^6.8.1",
     "axios": "^1.12.2",
     "body-parser": "^1.20.2",

@@ -34,7 +34,9 @@ class MCPProtocolHandler {
       params: {
         capabilities: {
           notification: true,
-          multiChannel: true
+          multiChannel: true,
+          tools: true,
+          prompts: true
         }
       },
       id: 'init'
@@ -83,6 +85,18 @@ class MCPProtocolHandler {
           break;
         case 'initialize':
           result = { initialized: true };
+          break;
+        case 'tools/list':
+          result = this.handleToolsListRequest(params);
+          break;
+        case 'tools/call':
+          result = await this.handleToolsCallRequest(params);
+          break;
+        case 'prompts/list':
+          result = this.handlePromptsListRequest(params);
+          break;
+        case 'prompts/get':
+          result = this.handlePromptsGetRequest(params);
           break;
         default:
           this.sendError(`Method ${method} not supported`, -32601, id);
@@ -191,6 +205,126 @@ class MCPProtocolHandler {
       }
     };
     return publicConfig;
+  }
+
+  // Handle tools list request
+  handleToolsListRequest(params) {
+    logger.info('Tools list requested');
+    return [
+      {
+        name: "send_notification",
+        description: "Send a notification to configured channels (LINE, Slack)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            message: { 
+              type: "string", 
+              description: "The message content to send" 
+            },
+            title: { 
+              type: "string", 
+              description: "The title for the notification" 
+            },
+            channels: { 
+              type: "array", 
+              items: { type: "string" },
+              description: "Array of channel names to send to (e.g., ['line', 'slack'])"
+            }
+          },
+          required: ["message"]
+        }
+      }
+    ];
+  }
+
+  // Handle tools call request
+  async handleToolsCallRequest(params) {
+    const { name, arguments: args } = params;
+    logger.info('Tools call requested', { name, args });
+
+    if (name === 'send_notification') {
+      return await this.handleNotifyRequest(args);
+    } else {
+      throw new Error(`Tool ${name} not found`);
+    }
+  }
+
+  // Handle prompts list request
+  handlePromptsListRequest(params) {
+    logger.info('Prompts list requested');
+    return [
+      {
+        name: "quick_notification",
+        title: "Quick Notification",
+        description: "Send a quick notification to one or more channels",
+        arguments: [
+          { 
+            name: "message", 
+            type: "string", 
+            required: true,
+            description: "The message to send"
+          },
+          { 
+            name: "title", 
+            type: "string", 
+            required: false,
+            description: "The title for the notification"
+          },
+          { 
+            name: "channel", 
+            type: "string", 
+            required: false,
+            description: "Specific channel to send to (line or slack)"
+          }
+        ]
+      },
+      {
+        name: "status_update",
+        title: "Status Update",
+        description: "Send a status update notification with predefined format",
+        arguments: [
+          { 
+            name: "status", 
+            type: "string", 
+            required: true,
+            description: "Current status (e.g., 'operational', 'degraded', 'down')"
+          },
+          { 
+            name: "details", 
+            type: "string", 
+            required: false,
+            description: "Additional details about the status"
+          }
+        ]
+      }
+    ];
+  }
+
+  // Handle prompts get request
+  handlePromptsGetRequest(params) {
+    const { name } = params;
+    logger.info('Prompts get requested', { name });
+
+    const prompts = this.handlePromptsListRequest();
+    const prompt = prompts.find(p => p.name === name);
+
+    if (prompt) {
+      // Add template content to the prompt
+      switch (name) {
+        case "quick_notification":
+          prompt.template = "Send the following message: {{message}}";
+          if (prompt.arguments.title) {
+            prompt.template = "Title: {{title}}\n\nMessage: {{message}}";
+          }
+          break;
+        case "status_update":
+          prompt.template = "Status Update: {{status}}\nDetails: {{details}}";
+          break;
+      }
+      return prompt;
+    } else {
+      throw new Error(`Prompt ${name} not found`);
+    }
   }
 
   // Send response via stdio

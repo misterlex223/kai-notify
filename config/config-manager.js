@@ -1,24 +1,53 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 class ConfigManager {
   constructor() {
-    this.configPath = path.join(__dirname, 'config.json');
     this.config = this.loadConfig();
   }
 
   loadConfig() {
+    // Priority order:
+    // 1. .kai-notify.json in current working directory
+    // 2. ~/.kai/notify.json in user's home directory
+    // 3. Default config file in project directory
+    
+    const workingDirConfig = path.join(process.cwd(), '.kai-notify.json');
+    const userHomeConfig = path.join(os.homedir(), '.kai', 'notify.json');
+    const defaultConfig = path.join(__dirname, 'config.json');
+    
+    // Try working directory config first
+    if (fs.existsSync(workingDirConfig)) {
+      console.log(`Loading config from: ${workingDirConfig}`);
+      try {
+        const rawData = fs.readFileSync(workingDirConfig, 'utf8');
+        return JSON.parse(rawData);
+      } catch (error) {
+        console.error(`Error loading working directory config: ${error.message}`);
+      }
+    }
+    
+    // Try user home config next
+    if (fs.existsSync(userHomeConfig)) {
+      console.log(`Loading config from: ${userHomeConfig}`);
+      try {
+        const rawData = fs.readFileSync(userHomeConfig, 'utf8');
+        return JSON.parse(rawData);
+      } catch (error) {
+        console.error(`Error loading user home config: ${error.message}`);
+      }
+    }
+    
+    // Fallback to default config
+    console.log(`Loading config from: ${defaultConfig}`);
     try {
-      const rawData = fs.readFileSync(this.configPath, 'utf8');
+      const rawData = fs.readFileSync(defaultConfig, 'utf8');
       return JSON.parse(rawData);
     } catch (error) {
       console.error('Error loading configuration:', error.message);
       // Return default config if loading fails
       return {
-        "server": {
-          "port": 3000,
-          "host": "localhost"
-        },
         "channels": {
           "slack": {
             "enabled": false,

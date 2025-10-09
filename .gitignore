@@ -77,5 +77,8 @@ Thumbs.db
 config/*.bak
 config/*.backup
 
-# Note: config.json is intentionally NOT ignored to ensure
-# the configuration is part of the repository
+# Local configuration file (template is in the repo)
+.kai-notify.json
+
+# Note: config/config.json contains default settings with empty credentials
+# and is intentionally included in the repository as a template

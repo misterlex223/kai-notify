@@ -1,7 +1,7 @@
 # Notification Hub - Requirements and Specifications
 
 ## Project Overview
-Notification Hub is a local MCP (Managed Compute Platform) server that serves as a centralized notification system. It receives notifications from AI services and distributes them across multiple channels, currently supporting Slack and LINE Official Account (OA).
+Notification Hub (kai-notify) is a local MCP (Managed Compute Platform) server that serves as a centralized notification system. It receives notifications from AI services via stdio communication and distributes them across multiple channels, currently supporting Slack and LINE Official Account (OA). The server operates without requiring network ports, making it suitable for local execution with multiple instances running simultaneously. The system supports npx execution for easy access without installation.
 
 ## Requirements
 
@@ -22,52 +22,81 @@ Notification Hub is a local MCP (Managed Compute Platform) server that serves as
 ## System Architecture
 
 ### Components
-1. **MCP Endpoint Handler**: Receives notification requests from AI services
+1. **Stdio Protocol Handler**: Receives and sends JSON-RPC formatted messages via stdin/stdout for MCP communication
 2. **Notification Router**: Determines which channels to send notifications to
 3. **Channel Adapters**: Individual modules for each notification channel (Slack, LINE)
 4. **Configuration Manager**: Handles configuration for all channels
 5. **Error Handler and Logger**: Manages errors and logs activities
 
 ### Data Flow
-1. AI service sends notification to MCP endpoint
-2. Notification Hub receives and validates the request
-3. Router determines target channels based on configuration
-4. Each channel adapter formats and sends the message
-5. Status is logged and returned to the AI service
+1. AI service sends notification request via stdio to the Notification Hub
+2. Stdio Protocol Handler receives and parses the JSON-RPC message
+3. Notification Hub validates the request
+4. Router determines target channels based on configuration
+5. Each channel adapter formats and sends the message
+6. Response is sent back to the AI service via stdout in JSON-RPC format
 
-## API Specifications
+## Communication Protocol
 
-### MCP Endpoint
-- **Method**: POST
-- **Path**: `/notify`
-- **Content-Type**: application/json
-- **Request Body**:
+### Stdio Communication
+The Notification Hub communicates via stdin/stdout using JSON-RPC 2.0 protocol for MCP compliance. The server can operate in two modes:
+
+1. **MCP Server Mode**: Automatically activated when stdin is piped to it (e.g., when launched by an MCP environment)
+2. **CLI Mode**: Activated with `--cli` flag for manual testing and interaction
+
+### MCP Requests via Stdio
+- **Protocol**: JSON-RPC 2.0 over stdin/stdout
+- **Request Format**:
   ```json
   {
-    "message": "Notification content",
-    "channels": ["slack", "line"], // Optional - defaults to all configured channels
-    "title": "Optional title",
-    "priority": "normal" // Optional - for future priority handling
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "notify",
+    "params": {
+      "message": "Notification content",
+      "channels": ["slack", "line"], // Optional - defaults to all configured channels
+      "title": "Optional title",
+      "priority": "normal" // Optional - for future priority handling
+    }
   }
   ```
 
-### Response
-- **Success**:
+### MCP Responses via Stdio
+- **Success Response**:
   ```json
   {
-    "status": "success",
-    "channels_notified": ["slack", "line"],
-    "timestamp": "ISO 8601 timestamp"
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "status": "success",
+      "channels_notified": ["slack", "line"],
+      "timestamp": "ISO 8601 timestamp"
+    }
   }
   ```
-- **Error**:
+
+- **Error Response**:
   ```json
   {
-    "status": "error",
-    "error": "Error description",
-    "timestamp": "ISO 8601 timestamp"
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+      "code": -32600, // Standard JSON-RPC error code
+      "message": "Error description"
+    }
   }
   ```
+
+### CLI Mode Commands
+- **Health Check**: `npx kai-notify --cli health`
+- **Notification**: `npx kai-notify --cli notify --message "Your message" --channel slack`
+- **MCP Server Mode**: `echo '{"jsonrpc":"2.0","method":"notify","params":{"message":"Test"},"id":1}' | npx kai-notify`
+
+### Configuration Priority
+The system looks for configuration in this order:
+1. `.kai-notify.json` in the current working directory
+2. `~/.kai/notify.json` in the user's home directory
+3. `config/config.json` in the project directory (fallback)
 
 ## Channel Integration Specifications
 
@@ -87,13 +116,15 @@ Notification Hub is a local MCP (Managed Compute Platform) server that serves as
 
 ## Configuration
 
-### Configuration File Format (config.json)
+### Configuration File Format
+The system supports multiple configuration file locations with the following priority:
+1. `.kai-notify.json` in the current working directory
+2. `~/.kai/notify.json` in the user's home directory  
+3. `config/config.json` in the project directory (fallback)
+
+All configuration files use the same format:
 ```json
 {
-  "server": {
-    "port": 3000,
-    "host": "localhost"
-  },
   "channels": {
     "slack": {
       "enabled": true,
@@ -113,8 +144,22 @@ Notification Hub is a local MCP (Managed Compute Platform) server that serves as
 
 ## Security Considerations
 - Store API tokens and credentials securely (not in code)
-- Optionally implement request authentication for the MCP endpoint
+- Since communication happens via stdio, network-based attacks are mitigated
 - Validate all input to prevent injection attacks
+- Ensure proper file permissions on configuration files containing credentials
+
+## npx Support
+- **Easy Access**: The system can be run directly with npx without requiring installation
+- **Global Availability**: Accessible from any directory without local installation
+- **Version Management**: npx automatically handles version updates
+- **Isolated Execution**: No global dependencies to manage
+
+## Benefits of Stdio Protocol
+- **No Network Ports Required**: The server operates without occupying network ports, allowing multiple instances to run simultaneously
+- **Enhanced Security**: Communication happens via stdio, eliminating network-based vulnerabilities
+- **MCP Compliance**: Fully compatible with MCP standards using JSON-RPC protocol
+- **Resource Efficient**: Lower overhead compared to HTTP-based servers
+- **Local Execution**: Optimized for local execution environments
 
 ## Future Enhancements
 - Additional notification channels (Email, Discord, etc.)

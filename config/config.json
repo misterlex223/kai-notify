@@ -1,8 +1,4 @@
 {
-  "server": {
-    "port": 3000,
-    "host": "localhost"
-  },
   "channels": {
     "slack": {
       "enabled": false,

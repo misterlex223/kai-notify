@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A multi-channel notification hub for AI task completion alerts",
   "main": "index.js",
+  "bin": {
+    "kai-notify": "index.js"
+  },
   "scripts": {
     "start": "node index.js",
     "cli": "node index.js --cli",

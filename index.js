@@ -12,12 +12,12 @@ const isMCPMode = !process.stdin.isTTY && !isCLIExplicit;
 function showUsage() {
   console.log('Usage:');
   console.log('  # MCP Server mode (automatic when stdin is not a TTY):');
-  console.log('  echo \'{"jsonrpc":"2.0","method":"notify","params":{"message":"Test"},"id":1}\' | node index.js');
+  console.log('  echo \'{"jsonrpc":"2.0","method":"notify","params":{"message":"Test"},"id":1}\' | npx kai-notify');
   console.log('');
   console.log('  # CLI mode:');
-  console.log('  node index.js --cli notify --message "Hello World" --channel slack');
-  console.log('  node index.js --cli health');
-  console.log('  node index.js --cli config');
+  console.log('  npx kai-notify --cli notify --message "Hello World" --channel slack');
+  console.log('  npx kai-notify --cli health');
+  console.log('  npx kai-notify --cli config');
   console.log('');
   console.log('Options:');
   console.log('  --cli           Run in CLI mode');
@@ -25,12 +25,17 @@ function showUsage() {
   console.log('  --title         Notification title (for notify command)');
   console.log('  --channel       Notification channel (for notify command)');
   console.log('');
+  console.log('Configuration priority:');
+  console.log('  1. .kai-notify.json in current directory');
+  console.log('  2. ~/.kai/notify.json in user home directory');
+  console.log('  3. config/config.json in project directory (fallback)');
+  console.log('');
   console.log('Examples:');
   console.log('  # Send notification via CLI');
-  console.log('  node index.js --cli notify --message "Task completed" --title "AI Notification"');
+  console.log('  npx kai-notify --cli notify --message "Task completed" --title "AI Notification"');
   console.log('');
   console.log('  # Check health via CLI');
-  console.log('  node index.js --cli health');
+  console.log('  npx kai-notify --cli health');
 }
 
 function parseCLIArgs() {

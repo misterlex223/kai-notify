@@ -51,7 +51,10 @@ export class MCPServer {
             case 'slack':
               if (!this.config.channels.slack.webhookUrl) {
                 return {
-                  content: [{ type: 'text', text: 'Error: Slack webhook URL not configured' }]
+                  error: {
+                    code: -32000, // Application specific error
+                    message: 'Slack webhook URL not configured'
+                  }
                 };
               }
               result = await this.slackAdapter.sendNotification(
@@ -63,7 +66,10 @@ export class MCPServer {
             case 'line':
               if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
                 return {
-                  content: [{ type: 'text', text: 'Error: LINE channel access token or user ID not configured' }]
+                  error: {
+                    code: -32000, // Application specific error
+                    message: 'LINE channel access token or user ID not configured'
+                  }
                 };
               }
               result = await this.lineAdapter.sendNotification(
@@ -73,57 +79,67 @@ export class MCPServer {
               );
               break;
             case 'multi':
-              // Send to both channels
-              if (!this.config.channels.slack.webhookUrl) {
-                return {
-                  content: [{ type: 'text', text: 'Error: Slack webhook URL not configured' }]
-                };
-              }
-              const slackResult = await this.slackAdapter.sendNotification(
-                this.config.channels.slack.webhookUrl,
-                message,
-                title
-              );
+              // Send to both channels if available
+              const results = {};
               
-              if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+              // Send to Slack if configured
+              if (this.config.channels.slack.webhookUrl) {
+                results.slack = await this.slackAdapter.sendNotification(
+                  this.config.channels.slack.webhookUrl,
+                  message,
+                  title
+                );
+              }
+              
+              // Send to LINE if configured
+              if (this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
+                results.line = await this.lineAdapter.sendNotification(
+                  this.config.channels.line.channelAccessToken,
+                  this.config.channels.line.defaultUserId,
+                  message
+                );
+              }
+              
+              // Check if at least one channel was configured and sent
+              if (Object.keys(results).length === 0) {
                 return {
-                  content: [{ type: 'text', text: 'Error: LINE channel access token or user ID not configured' }]
+                  error: {
+                    code: -32000, // Application specific error
+                    message: 'No channels configured for multi-channel notification'
+                  }
                 };
               }
-              const lineResult = await this.lineAdapter.sendNotification(
-                this.config.channels.line.channelAccessToken,
-                this.config.channels.line.defaultUserId,
-                message
-              );
               
               result = {
-                slack: slackResult,
-                line: lineResult,
-                message: 'Notification sent to multiple channels'
+                ...results,
+                message: `Notification sent to ${Object.keys(results).join(', ')}`
               };
               break;
             default:
-              throw new Error(`Unsupported channel: ${channel}`);
+              return {
+                error: {
+                  code: -32000, // Application specific error
+                  message: `Unsupported channel: ${channel}`
+                }
+              };
           }
           
           return {
-            content: [
-              {
-                type: 'text',
-                text: `Successfully sent notification: ${JSON.stringify(result)}`
-              }
-            ]
+            result: {
+              success: true,
+              channel,
+              message: result.message || 'Notification sent successfully',
+              timestamp: new Date().toISOString()
+            }
           };
         } catch (error) {
           logger.error('Error sending notification', { error: error.message });
           
           return {
-            content: [
-              {
-                type: 'text',
-                text: `Error sending notification: ${error.message}`
-              }
-            ]
+            error: {
+              code: -32000, // Application specific error
+              message: error.message
+            }
           };
         }
       });

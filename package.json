@@ -12,6 +12,24 @@
     "cli": "node index.js --cli",
     "dev": "nodemon index.js"
   },
+  "keywords": [
+    "notification",
+    "mcp",
+    "slack",
+    "line",
+    "ai",
+    "alert"
+  ],
+  "author": "Unclemon / misterlex223",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/misterlex223/kai-notify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/misterlex223/kai-notify/issues"
+  },
+  "homepage": "https://github.com/misterlex223/kai-notify#readme",
   "dependencies": {
     "@line/bot-sdk": "^7.5.2",
     "@modelcontextprotocol/sdk": "^1.19.1",

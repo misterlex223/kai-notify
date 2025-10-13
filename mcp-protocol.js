@@ -16,7 +16,7 @@ export class MCPServer {
     this.slackAdapter = new SlackAdapter();
     this.lineAdapter = new LineAdapter();
     this.config = configManager.get();
-    
+
     // Create the MCP server with proper server info
     this.mcpServer = new McpServer({
       name: 'kai-notify',
@@ -29,6 +29,10 @@ export class MCPServer {
         prompts: {}
       }
     });
+
+    // Track server initialization state
+    this.initialized = false;
+    this.startTime = new Date();
   }
 
   // Initialize the MCP server using the official SDK
@@ -45,11 +49,34 @@ export class MCPServer {
         }
       }, async ({ channel, message, title = '' }) => {
         try {
+          // Input validation
+          if (!channel || typeof channel !== 'string') {
+            return {
+              error: {
+                code: -32602, // Invalid params
+                message: 'Channel parameter is required and must be a string'
+              }
+            };
+          }
+
+          if (!message || typeof message !== 'string') {
+            return {
+              error: {
+                code: -32602, // Invalid params
+                message: 'Message parameter is required and must be a string'
+              }
+            };
+          }
+
+          // Log incoming notification request
+          logger.info('Processing MCP notification request', { channel, messageLength: message.length });
+
           let result;
-          
+
           switch (channel) {
             case 'slack':
               if (!this.config.channels.slack.webhookUrl) {
+                logger.warn('Slack notification requested but no webhook URL configured');
                 return {
                   error: {
                     code: -32000, // Application specific error
@@ -65,6 +92,7 @@ export class MCPServer {
               break;
             case 'line':
               if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+                logger.warn('LINE notification requested but credentials not configured');
                 return {
                   error: {
                     code: -32000, // Application specific error
@@ -81,25 +109,33 @@ export class MCPServer {
             case 'multi':
               // Send to both channels if available
               const results = {};
-              
+
               // Send to Slack if configured
               if (this.config.channels.slack.webhookUrl) {
-                results.slack = await this.slackAdapter.sendNotification(
-                  this.config.channels.slack.webhookUrl,
-                  message,
-                  title
-                );
+                try {
+                  results.slack = await this.slackAdapter.sendNotification(
+                    this.config.channels.slack.webhookUrl,
+                    message,
+                    title
+                  );
+                } catch (slackError) {
+                  logger.error('Error sending to Slack in multi-channel mode', { error: slackError.message });
+                }
               }
-              
+
               // Send to LINE if configured
               if (this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
-                results.line = await this.lineAdapter.sendNotification(
-                  this.config.channels.line.channelAccessToken,
-                  this.config.channels.line.defaultUserId,
-                  message
-                );
+                try {
+                  results.line = await this.lineAdapter.sendNotification(
+                    this.config.channels.line.channelAccessToken,
+                    this.config.channels.line.defaultUserId,
+                    message
+                  );
+                } catch (lineError) {
+                  logger.error('Error sending to LINE in multi-channel mode', { error: lineError.message });
+                }
               }
-              
+
               // Check if at least one channel was configured and sent
               if (Object.keys(results).length === 0) {
                 return {
@@ -109,21 +145,29 @@ export class MCPServer {
                   }
                 };
               }
-              
+
               result = {
                 ...results,
                 message: `Notification sent to ${Object.keys(results).join(', ')}`
               };
               break;
             default:
+              logger.warn('Unsupported channel requested', { channel });
               return {
                 error: {
-                  code: -32000, // Application specific error
-                  message: `Unsupported channel: ${channel}`
+                  code: -32601, // Method not found
+                  message: `Unsupported channel: ${channel}. Supported channels: slack, line, multi`
                 }
               };
           }
-          
+
+          // Mark as initialized after first successful request
+          if (!this.initialized) {
+            this.initialized = true;
+          }
+
+          logger.info('Notification sent successfully', { channel, result: result.message });
+
           return {
             result: {
               success: true,
@@ -133,17 +177,21 @@ export class MCPServer {
             }
           };
         } catch (error) {
-          logger.error('Error sending notification', { error: error.message });
-          
+          logger.error('Error in MCP sendNotification tool', {
+            error: error.message,
+            stack: error.stack,
+            channel
+          });
+
           return {
             error: {
-              code: -32000, // Application specific error
-              message: error.message
+              code: -32603, // Internal error
+              message: `Internal server error: ${error.message}`
             }
           };
         }
       });
-      
+
       // Register a prompt that guides the AI on using the sendNotification tool
       this.mcpServer.registerPrompt('sendNotification', {
         title: 'Send Notification Tool Guide',
@@ -163,7 +211,7 @@ export class MCPServer {
               }
             },
             {
-              role: 'user', 
+              role: 'user',
               content: {
                 type: 'text',
                 text: `When I need to notify users about: ${task}, I should use the sendNotification tool.`
@@ -179,17 +227,50 @@ export class MCPServer {
           ]
         };
       });
-      
+
+      // Register a health check tool for server monitoring
+      this.mcpServer.registerTool('server/health', {
+        title: 'Server Health Check',
+        description: 'Check the health status of the notification server',
+        inputSchema: {}
+      }, async () => {
+        try {
+          return {
+            result: {
+              status: 'healthy',
+              uptime: new Date().getTime() - this.startTime.getTime(),
+              timestamp: new Date().toISOString(),
+              version: '1.0.0',
+              initialized: this.initialized
+            }
+          };
+        } catch (error) {
+          return {
+            error: {
+              code: -32603, // Internal error
+              message: error.message
+            }
+          };
+        }
+      });
+
       // Create transport for stdio communication
       const transport = new StdioTransport(process.stdin, process.stdout);
-      
+
       // Connect the server to the transport
       await this.mcpServer.connect(transport);
-      
-      logger.info('MCP Server initialized and running with SDK');
-      
+
+      logger.info('MCP Server initialized and running with SDK', {
+        serverName: 'kai-notify',
+        version: '1.0.0',
+        startTime: this.startTime.toISOString()
+      });
+
     } catch (error) {
-      logger.error('Error initializing MCP server with SDK', { error: error.message });
+      logger.error('Error initializing MCP server with SDK', {
+        error: error.message,
+        stack: error.stack
+      });
       throw error;
     }
   }
@@ -197,14 +278,30 @@ export class MCPServer {
   // CLI compatibility methods
   async handleNotifyRequest(params) {
     try {
+      // Input validation for CLI mode
       const { message, title, channels = ['multi'] } = params;
-      
+
+      if (!message || typeof message !== 'string') {
+        return {
+          success: false,
+          error: 'Message parameter is required and must be a string'
+        };
+      }
+
+      if (!Array.isArray(channels)) {
+        return {
+          success: false,
+          error: 'Channels parameter must be an array'
+        };
+      }
+
       let result = {};
-      
+
       for (const channel of channels) {
         switch (channel) {
           case 'slack':
             if (!this.config.channels.slack.webhookUrl) {
+              logger.warn('CLI: Slack notification requested but no webhook URL configured');
               return {
                 success: false,
                 error: 'Slack webhook URL not configured'
@@ -218,6 +315,7 @@ export class MCPServer {
             break;
           case 'line':
             if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+              logger.warn('CLI: LINE notification requested but credentials not configured');
               return {
                 success: false,
                 error: 'LINE channel access token or user ID not configured'
@@ -232,41 +330,55 @@ export class MCPServer {
           case 'multi':
           default:
             // Send to both channels
-            if (!this.config.channels.slack.webhookUrl) {
+            const multiResults = {};
+
+            if (this.config.channels.slack.webhookUrl) {
+              try {
+                multiResults.slack = await this.slackAdapter.sendNotification(
+                  this.config.channels.slack.webhookUrl,
+                  message,
+                  title
+                );
+              } catch (slackError) {
+                logger.error('CLI: Error sending to Slack in multi-channel mode', { error: slackError.message });
+              }
+            }
+
+            if (this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
+              try {
+                multiResults.line = await this.lineAdapter.sendNotification(
+                  this.config.channels.line.channelAccessToken,
+                  this.config.channels.line.defaultUserId,
+                  message
+                );
+              } catch (lineError) {
+                logger.error('CLI: Error sending to LINE in multi-channel mode', { error: lineError.message });
+              }
+            }
+
+            // Check if at least one channel was configured and sent
+            if (Object.keys(multiResults).length === 0) {
               return {
                 success: false,
-                error: 'Slack webhook URL not configured'
+                error: 'No channels configured for multi-channel notification'
               };
             }
-            result.slack = await this.slackAdapter.sendNotification(
-              this.config.channels.slack.webhookUrl,
-              message,
-              title
-            );
-            
-            if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
-              return {
-                success: false,
-                error: 'LINE channel access token or user ID not configured'
-              };
-            }
-            result.line = await this.lineAdapter.sendNotification(
-              this.config.channels.line.channelAccessToken,
-              this.config.channels.line.defaultUserId,
-              message
-            );
-            result.message = 'Notification sent to multiple channels';
+
+            result = multiResults;
+            result.message = `Notification sent to ${Object.keys(multiResults).join(', ')}`;
             break;
         }
       }
-      
+
+      logger.info('CLI notification sent successfully', { channels, result: result.message });
+
       return {
         success: true,
         result,
         message: 'Notification sent successfully'
       };
     } catch (error) {
-      logger.error('Error in handleNotifyRequest:', error);
+      logger.error('Error in handleNotifyRequest:', { error: error.message, stack: error.stack });
       return {
         success: false,
         error: error.message
@@ -275,24 +387,47 @@ export class MCPServer {
   }
   
   handleHealthRequest() {
-    return {
-      success: true,
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version: '1.0.0'
-    };
+    try {
+      return {
+        success: true,
+        status: 'healthy',
+        uptime: new Date().getTime() - this.startTime.getTime(),
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        initialized: this.initialized
+      };
+    } catch (error) {
+      logger.error('Error in handleHealthRequest:', { error: error.message });
+      return {
+        success: false,
+        status: 'error',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
-  
+
   handleConfigRequest() {
-    // Return configuration info without sensitive data
-    const { slack, line } = this.config.channels;
-    return {
-      success: true,
-      config: {
-        hasSlackConfig: !!slack.webhookUrl,
-        hasLineConfig: !!(line.channelAccessToken && line.defaultUserId),
-        channels: ['slack', 'line', 'multi']
-      }
-    };
+    try {
+      // Return configuration info without sensitive data
+      const { slack, line } = this.config.channels;
+      return {
+        success: true,
+        config: {
+          hasSlackConfig: !!slack.webhookUrl,
+          hasLineConfig: !!(line.channelAccessToken && line.defaultUserId),
+          channels: ['slack', 'line', 'multi'],
+          initialized: this.initialized,
+          uptime: new Date().getTime() - this.startTime.getTime()
+        }
+      };
+    } catch (error) {
+      logger.error('Error in handleConfigRequest:', { error: error.message });
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 }

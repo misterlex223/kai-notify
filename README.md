@@ -1,12 +1,12 @@
 # kai-notify
 
-A stdio-based MCP (Managed Compute Platform) server that serves as a centralized notification system. It receives notifications from AI services via stdio communication and distributes them across multiple channels, currently supporting Slack and LINE Official Account (OA). The server operates without requiring network ports, making it suitable for local execution with multiple instances running simultaneously.
+A stdio-based MCP (Managed Compute Platform) server that serves as a centralized notification system. It receives notifications from AI services via stdio communication and distributes them across multiple channels, currently supporting Slack, LINE Official Account (OA), and Feishu. The server operates without requiring network ports, making it suitable for local execution with multiple instances running simultaneously.
 
 ## Features
 
 - **Stdio Protocol**: Communicates via stdin/stdout using JSON-RPC 2.0 protocol for MCP compliance
 - **Multiple Modes**: Operates in both MCP Server Mode and CLI Mode
-- **Multi-Channel Support**: Send notifications to Slack and LINE
+- **Multi-Channel Support**: Send notifications to Slack, LINE, and Feishu
 - **Flexible Configuration**: Supports multiple configuration file locations
 - **npx Support**: Can be run directly with npx without installation
 
@@ -44,6 +44,12 @@ Create a `.kai-notify.json` file in your working directory:
       "channelAccessToken": "your-channel-access-token",
       "channelSecret": "your-channel-secret",
       "defaultUserId": "user-id-to-send-to"
+    },
+    "feishu": {
+      "enabled": true,
+      "appId": "cli_xxxxxxxxx",
+      "appSecret": "your-app-secret",
+      "defaultUserId": "ou_xxxxxxxxx"
     }
   }
 }
@@ -75,7 +81,7 @@ npx kai-notify --cli config
 - `--cli`: Run in CLI mode
 - `--message`: Notification message (for notify command)
 - `--title`: Notification title (for notify command)
-- `--channel`: Notification channel (for notify command)
+- `--channel`: Notification channel (for notify command) - slack, line, feishu, or multi
 
 ## Examples
 
@@ -85,6 +91,9 @@ npx kai-notify --cli notify --message "Task completed successfully" --title "Not
 
 # Send a notification to Slack
 npx kai-notify --cli notify --message "Build finished" --channel slack
+
+# Send a notification to Feishu
+npx kai-notify --cli notify --message "Task completed successfully" --channel feishu
 
 # Send notification without specifying channel (sends to all enabled channels)
 npx kai-notify --cli notify --message "System alert"

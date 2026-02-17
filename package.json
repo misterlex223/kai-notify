@@ -17,6 +17,8 @@
     "mcp",
     "slack",
     "line",
+    "feishu",
+    "lark",
     "ai",
     "alert"
   ],
@@ -31,6 +33,7 @@
   },
   "homepage": "https://github.com/misterlex223/kai-notify#readme",
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.29.0",
     "@line/bot-sdk": "^7.5.2",
     "@modelcontextprotocol/sdk": "^1.19.1",
     "@slack/web-api": "^6.8.1",

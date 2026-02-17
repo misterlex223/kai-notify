@@ -74,12 +74,12 @@ export class MCPServer {
 
           switch (channel) {
             case 'slack':
-              if (!this.config.channels.slack.webhookUrl) {
-                logger.warn('Slack notification requested but no webhook URL configured');
+              if (!this.config.channels.slack?.enabled || !this.config.channels.slack.webhookUrl) {
+                logger.warn('Slack notification requested but not properly configured');
                 return {
                   error: {
                     code: -32000, // Application specific error
-                    message: 'Slack webhook URL not configured'
+                    message: 'Slack not properly configured (webhookUrl is required)'
                   }
                 };
               }
@@ -90,12 +90,12 @@ export class MCPServer {
               );
               break;
             case 'line':
-              if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
-                logger.warn('LINE notification requested but credentials not configured');
+              if (!this.config.channels.line?.enabled || !this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+                logger.warn('LINE notification requested but not properly configured');
                 return {
                   error: {
                     code: -32000, // Application specific error
-                    message: 'LINE channel access token or user ID not configured'
+                    message: 'LINE not properly configured (channelAccessToken and defaultUserId are required)'
                   }
                 };
               }
@@ -126,7 +126,7 @@ export class MCPServer {
               const results = {};
 
               // Send to Slack if configured
-              if (this.config.channels.slack.webhookUrl) {
+              if (this.config.channels.slack?.enabled && this.config.channels.slack.webhookUrl) {
                 try {
                   results.slack = await this.slackAdapter.sendNotification(
                     this.config.channels.slack.webhookUrl,
@@ -139,7 +139,7 @@ export class MCPServer {
               }
 
               // Send to LINE if configured
-              if (this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
+              if (this.config.channels.line?.enabled && this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
                 try {
                   results.line = await this.lineAdapter.sendNotification(
                     this.config.channels.line.channelAccessToken,
@@ -249,7 +249,7 @@ export class MCPServer {
               role: 'assistant',
               content: {
                 type: 'text',
-                text: `Use the sendNotification tool to send notifications about: ${task}. Choose the appropriate channel (slack, line, or multi) based on your configuration and user preferences.`
+                text: `Use the sendNotification tool to send notifications about: ${task}. Choose the appropriate channel (slack, line, feishu, or multi) based on your configuration and user preferences.`
               }
             }
           ]
@@ -328,11 +328,11 @@ export class MCPServer {
       for (const channel of channels) {
         switch (channel) {
           case 'slack':
-            if (!this.config.channels.slack.webhookUrl) {
-              logger.warn('CLI: Slack notification requested but no webhook URL configured');
+            if (!this.config.channels.slack?.enabled || !this.config.channels.slack.webhookUrl) {
+              logger.warn('CLI: Slack notification requested but not properly configured');
               return {
                 success: false,
-                error: 'Slack webhook URL not configured'
+                error: 'Slack not properly configured (webhookUrl is required)'
               };
             }
             result.slack = await this.slackAdapter.sendNotification(
@@ -342,11 +342,11 @@ export class MCPServer {
             );
             break;
           case 'line':
-            if (!this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
-              logger.warn('CLI: LINE notification requested but credentials not configured');
+            if (!this.config.channels.line?.enabled || !this.config.channels.line.channelAccessToken || !this.config.channels.line.defaultUserId) {
+              logger.warn('CLI: LINE notification requested but not properly configured');
               return {
                 success: false,
-                error: 'LINE channel access token or user ID not configured'
+                error: 'LINE not properly configured (channelAccessToken and defaultUserId are required)'
               };
             }
             result.line = await this.lineAdapter.sendNotification(
@@ -374,7 +374,7 @@ export class MCPServer {
             // Send to both channels
             const multiResults = {};
 
-            if (this.config.channels.slack.webhookUrl) {
+            if (this.config.channels.slack?.enabled && this.config.channels.slack.webhookUrl) {
               try {
                 multiResults.slack = await this.slackAdapter.sendNotification(
                   this.config.channels.slack.webhookUrl,
@@ -386,7 +386,7 @@ export class MCPServer {
               }
             }
 
-            if (this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
+            if (this.config.channels.line?.enabled && this.config.channels.line.channelAccessToken && this.config.channels.line.defaultUserId) {
               try {
                 multiResults.line = await this.lineAdapter.sendNotification(
                   this.config.channels.line.channelAccessToken,

@@ -37,7 +37,7 @@ class FeishuAdapter {
       const text = title ? `${title}\n${message}` : message;
 
       // Send message via Feishu API
-      const response = await this.client.message.sendMessage({
+      const response = await this.client.im.message.create({
         params: {
           receive_id_type: 'open_id',
         },

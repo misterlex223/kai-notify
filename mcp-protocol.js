@@ -4,6 +4,7 @@ import logger from './utils/logger.js';
 import configManager from './config/config-manager.js';
 import SlackAdapter from './adapters/slack-adapter.js';
 import LineAdapter from './adapters/line-adapter.js';
+import FeishuAdapter from './adapters/feishu-adapter.js';
 import { z } from 'zod';
 
 // Import MCP SDK components using the wildcard path from package exports
@@ -15,6 +16,7 @@ export class MCPServer {
   constructor() {
     this.slackAdapter = new SlackAdapter();
     this.lineAdapter = new LineAdapter();
+    this.feishuAdapter = new FeishuAdapter();
     this.config = configManager.get();
 
     // Create the MCP server with proper server info
@@ -41,7 +43,7 @@ export class MCPServer {
       // Register our notification tool
       this.mcpServer.registerTool('sendNotification', {
         title: 'Send Notification', // Display name for UI
-        description: 'Send a notification to configured channels',
+        description: 'Send a notification to configured channels (slack, line, feishu, or multi)',
         inputSchema: {
           channel: z.string().describe('Channel to send notification to (slack, line, or multi)'),
           message: z.string().describe('Message content to send'),
@@ -106,6 +108,22 @@ export class MCPServer {
                 message
               );
               break;
+            case 'feishu':
+              if (!this.config.channels.feishu?.enabled || !this.config.channels.feishu.appId || !this.config.channels.feishu.appSecret || !this.config.channels.feishu.defaultUserId) {
+                logger.warn('Feishu notification requested but not properly configured');
+                return {
+                  error: {
+                    code: -32000,
+                    message: 'Feishu not properly configured (appId, appSecret, and defaultUserId are required)'
+                  }
+                };
+              }
+              result = await this.feishuAdapter.sendNotification(
+                this.config.channels.feishu.defaultUserId,
+                message,
+                title
+              );
+              break;
             case 'multi':
               // Send to both channels if available
               const results = {};
@@ -136,6 +154,19 @@ export class MCPServer {
                 }
               }
 
+              // Send to Feishu if configured
+              if (this.config.channels.feishu?.enabled && this.config.channels.feishu.appId && this.config.channels.feishu.appSecret && this.config.channels.feishu.defaultUserId) {
+                try {
+                  results.feishu = await this.feishuAdapter.sendNotification(
+                    this.config.channels.feishu.defaultUserId,
+                    message,
+                    title
+                  );
+                } catch (feishuError) {
+                  logger.error('Error sending to Feishu in multi-channel mode', { error: feishuError.message });
+                }
+              }
+
               // Check if at least one channel was configured and sent
               if (Object.keys(results).length === 0) {
                 return {
@@ -156,7 +187,7 @@ export class MCPServer {
               return {
                 error: {
                   code: -32601, // Method not found
-                  message: `Unsupported channel: ${channel}. Supported channels: slack, line, multi`
+                  message: `Unsupported channel: ${channel}. Supported channels: slack, line, feishu, multi`
                 }
               };
           }
@@ -327,6 +358,20 @@ export class MCPServer {
               message
             );
             break;
+          case 'feishu':
+            if (!this.config.channels.feishu?.enabled || !this.config.channels.feishu.appId || !this.config.channels.feishu.appSecret || !this.config.channels.feishu.defaultUserId) {
+              logger.warn('CLI: Feishu notification requested but not properly configured');
+              return {
+                success: false,
+                error: 'Feishu not properly configured (appId, appSecret, and defaultUserId are required)'
+              };
+            }
+            result.feishu = await this.feishuAdapter.sendNotification(
+              this.config.channels.feishu.defaultUserId,
+              message,
+              title
+            );
+            break;
           case 'multi':
           default:
             // Send to both channels
@@ -353,6 +398,18 @@ export class MCPServer {
                 );
               } catch (lineError) {
                 logger.error('CLI: Error sending to LINE in multi-channel mode', { error: lineError.message });
+              }
+            }
+
+            if (this.config.channels.feishu?.enabled && this.config.channels.feishu.appId && this.config.channels.feishu.appSecret && this.config.channels.feishu.defaultUserId) {
+              try {
+                multiResults.feishu = await this.feishuAdapter.sendNotification(
+                  this.config.channels.feishu.defaultUserId,
+                  message,
+                  title
+                );
+              } catch (feishuError) {
+                logger.error('CLI: Error sending to Feishu in multi-channel mode', { error: feishuError.message });
               }
             }
 
@@ -410,13 +467,14 @@ export class MCPServer {
   handleConfigRequest() {
     try {
       // Return configuration info without sensitive data
-      const { slack, line } = this.config.channels;
+      const { slack, line, feishu } = this.config.channels;
       return {
         success: true,
         config: {
           hasSlackConfig: !!slack.webhookUrl,
           hasLineConfig: !!(line.channelAccessToken && line.defaultUserId),
-          channels: ['slack', 'line', 'multi'],
+          hasFeishuConfig: !!(feishu?.appId && feishu?.appSecret && feishu?.defaultUserId),
+          channels: ['slack', 'line', 'feishu', 'multi'],
           initialized: this.initialized,
           uptime: new Date().getTime() - this.startTime.getTime()
         }

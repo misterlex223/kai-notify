@@ -11,6 +11,12 @@
       "channelAccessToken": "",
       "channelSecret": "",
       "defaultUserId": ""
+    },
+    "feishu": {
+      "enabled": false,
+      "appId": "",
+      "appSecret": "",
+      "defaultUserId": ""
     }
   }
 }

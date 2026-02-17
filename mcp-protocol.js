@@ -1,5 +1,3 @@
-import readline from 'readline';
-import { spawn } from 'child_process';
 import logger from './utils/logger.js';
 import configManager from './config/config-manager.js';
 import SlackAdapter from './adapters/slack-adapter.js';
@@ -10,7 +8,6 @@ import { z } from 'zod';
 // Import MCP SDK components using the wildcard path from package exports
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport as StdioTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 
 export class MCPServer {
   constructor() {
@@ -45,7 +42,7 @@ export class MCPServer {
         title: 'Send Notification', // Display name for UI
         description: 'Send a notification to configured channels (slack, line, feishu, or multi)',
         inputSchema: {
-          channel: z.string().describe('Channel to send notification to (slack, line, or multi)'),
+          channel: z.string().describe('Channel to send notification to (slack, line, feishu, or multi)'),
           message: z.string().describe('Message content to send'),
           title: z.string().optional().describe('Optional title for the notification')
         }

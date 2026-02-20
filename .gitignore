@@ -80,5 +80,8 @@ config/*.backup
 # Local configuration file (template is in the repo)
 .kai-notify.json
 
+# Serena workspace
+.serena/
+
 # Note: config/config.json contains default settings with empty credentials
 # and is intentionally included in the repository as a template
